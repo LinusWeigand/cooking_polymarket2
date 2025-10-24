@@ -1,0 +1,7 @@
+.env
+*.env
+.env.example
+.env.local
+.idea
+__pycache__
+.DS_Store

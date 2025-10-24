@@ -1,0 +1,153 @@
+[
+  {
+    "id": "2c35b0eb-03d3-4227-a18d-2f93f9bd1705",
+    "taker_order_id": "0x208a268790dc3163794c85c24b5189e2f524b02b2998d689268843c7acfba2cb",
+    "market": "0xefa0a1ab27d1c9c5d92ba6797a0a32bf80594b348de58ac8993418b622c37c91",
+    "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+    "side": "BUY",
+    "size": "5",
+    "fee_rate_bps": "0",
+    "price": "0.24",
+    "status": "MINED",
+    "match_time": "1759600691",
+    "last_update": "1759600707",
+    "outcome": "Up",
+    "bucket_index": 0,
+    "owner": "d576b42c-c9fa-da03-7762-e51e45e1ac39",
+    "maker_address": "0x781c43cc0297Ada363641ec7D3A2d2011Ebe8309",
+    "transaction_hash": "0x95a1e11ece96941aa004cdc4f0486ff5a4427b27c8cd8b4aa1beddf32892306e",
+    "maker_orders": [
+      {
+        "order_id": "0xfe2e3e00d7c36cdbc413029d197e22ae3205eb9858bb5b617ec898aefae68fea",
+        "owner": "0e6b7cc1-b700-1048-b7e8-f4267b8a0001",
+        "maker_address": "0x88a4AABe652927a1fF7ED4728B1803f6446c346a",
+        "matched_amount": "5",
+        "price": "0.76",
+        "fee_rate_bps": "0",
+        "asset_id": "87237817409452900588962239529320251126242728304515881524775293023420089302927",
+        "outcome": "Down",
+        "side": "BUY"
+      }
+    ],
+    "trader_side": "TAKER"
+  },
+  {
+    "id": "6ac9cfd2-7484-4991-a953-a6d1078419bd",
+    "taker_order_id": "0x373770bf63655ded7956978dc252bf9bc9467f0c71efefcecce88f4c91075e39",
+    "market": "0xefa0a1ab27d1c9c5d92ba6797a0a32bf80594b348de58ac8993418b622c37c91",
+    "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+    "side": "SELL",
+    "size": "400.36",
+    "fee_rate_bps": "0",
+    "price": "0.38",
+    "status": "CONFIRMED",
+    "match_time": "1759600397",
+    "last_update": "1759600462",
+    "outcome": "Up",
+    "bucket_index": 0,
+    "owner": "9c0c9cd6-2770-6f80-e884-2919a964e696",
+    "maker_address": "0xE7a6E560CCb25de22CCaA3AF2acdeee166c506B7",
+    "transaction_hash": "0x0622341ebf7d4a86579fb6476bcf7da8cb60bc3f5e194051bf80e39e7ae342f2",
+    "maker_orders": [
+      {
+        "order_id": "0x28255b41fd072fd0193f2c100607efb23d568cfd2034ed2719369ec33de6f358",
+        "owner": "67245881-c91d-c856-3383-6e015ec6b3e3",
+        "maker_address": "0x842dabdbf420AceA760aF817fE7c85a249179d4d",
+        "matched_amount": "339",
+        "price": "0.38",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      },
+      {
+        "order_id": "0x36ee6c5c203c220661f799d94fd91d203e677ce6cd12af4dd53e04ad1fc931e9",
+        "owner": "d576b42c-c9fa-da03-7762-e51e45e1ac39",
+        "maker_address": "0x781c43cc0297Ada363641ec7D3A2d2011Ebe8309",
+        "matched_amount": "5",
+        "price": "0.38",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      },
+      {
+        "order_id": "0x025fd92f752e2903cdd76086fe03a203e157e5cf8763322bac6e94c4582e4192",
+        "owner": "f7fa003d-7d4f-196f-4c9f-17a8421bd41d",
+        "maker_address": "0x5f4D4927Ea3Ca72c9735f56778cFBb046c186bE0",
+        "matched_amount": "10",
+        "price": "0.37",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      },
+      {
+        "order_id": "0x7be20b777e090e21e114c6183c73f27b91fc3c37bdacfa2e5d091d27e084bdf7",
+        "owner": "f7fa003d-7d4f-196f-4c9f-17a8421bd41d",
+        "maker_address": "0x5f4D4927Ea3Ca72c9735f56778cFBb046c186bE0",
+        "matched_amount": "10",
+        "price": "0.36",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      },
+      {
+        "order_id": "0x63d1b7884c5bd7e7771f7227ee57491c07f79d9fc5c24ae76203cc8bd0c4eafc",
+        "owner": "f7fa003d-7d4f-196f-4c9f-17a8421bd41d",
+        "maker_address": "0x5f4D4927Ea3Ca72c9735f56778cFBb046c186bE0",
+        "matched_amount": "10",
+        "price": "0.36",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      },
+      {
+        "order_id": "0x0d9282b93d398fe51c46a34e0f3b11d2306efc3f5fcdfa8559ffc9106296ef87",
+        "owner": "610a03c6-0d7e-5d11-fc4a-af30138462dd",
+        "maker_address": "0xFB1c3C1Ab4Fb2d0CBCBb9538c8d4D357DD95963e",
+        "matched_amount": "26.36",
+        "price": "0.35",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      }
+    ],
+    "trader_side": "MAKER"
+  },
+  {
+    "id": "da185e60-80ee-493d-826b-a7193852b1f1",
+    "taker_order_id": "0x89dc3cf6889dbc8b1d7b166d6def46e7dd72ae6acc8ef05ce261f835d0bff845",
+    "market": "0xefa0a1ab27d1c9c5d92ba6797a0a32bf80594b348de58ac8993418b622c37c91",
+    "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+    "side": "SELL",
+    "size": "5",
+    "fee_rate_bps": "0",
+    "price": "0.39",
+    "status": "CONFIRMED",
+    "match_time": "1759600392",
+    "last_update": "1759600462",
+    "outcome": "Up",
+    "bucket_index": 0,
+    "owner": "4fdc1469-2ca8-db3c-4cb9-69d1ead49ad9",
+    "maker_address": "0xca85f4b9e472B542e1DF039594eeAebb6d466bF2",
+    "transaction_hash": "0x49dcdb89cde775a778c6da5e297dc14bead8f237044f58e076d3beb600192008",
+    "maker_orders": [
+      {
+        "order_id": "0x1f5f5a1bedca1143e76b96337036762665e7bd9470a375817b4a35c2d9a5d66c",
+        "owner": "d576b42c-c9fa-da03-7762-e51e45e1ac39",
+        "maker_address": "0x781c43cc0297Ada363641ec7D3A2d2011Ebe8309",
+        "matched_amount": "5",
+        "price": "0.39",
+        "fee_rate_bps": "0",
+        "asset_id": "82114174534565055870741464607452787509172443007116624198029629009791807923450",
+        "outcome": "Up",
+        "side": "BUY"
+      }
+    ],
+    "trader_side": "MAKER"
+  }
+]
