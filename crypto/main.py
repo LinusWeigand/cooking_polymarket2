@@ -13,6 +13,8 @@ import threading
 import pandas as pd
 import os
 import sys
+
+from crypto.tests.simulate_event import get_mock_data, get_mock_p_fair
 from crypto.utils import Asset, get_next_hour_timestamp
 try:
     import garch_monte_carlo
@@ -23,7 +25,66 @@ except ImportError:
 FILENAME = "../data/btc_1m_log_returns.csv"
 
 def to_size(x):
-    return max(math.floor(float(x) * 100) / 100, 0.)
+    return max(round(float(x), 2), 0.)
+
+
+def is_matching(a, b):
+    return a['type'] == b['type'] and a['side'] == b['side'] and math.isclose(a['price'], b['price'])
+
+
+def less_than(a, b):
+    return a <= b + 1e-6
+
+
+# If previous Limit Order (Pending Order) was executed
+# We assume Limit Orders are executed if better than the best offer
+def was_executed(order_book, limit_order):
+    best_bid_price = float(order_book['bids'][0]['price'])
+    best_ask_price = float(order_book['asks'][0]['price'])
+    o = limit_order
+    if o['type'] == 'YES':
+        if o['side'] == 'BUY':
+            price_matched = math.isclose(best_bid_price, o['price'])
+            return not price_matched and best_bid_price < o['price']
+        elif o['side'] == 'SELL':
+            price_matched = math.isclose(best_ask_price, o['price'])
+            return not price_matched and best_ask_price > o['price']
+    elif o['type'] == 'NO':
+        if o['side'] == 'BUY':
+            best_bid_price_no = 1. - best_ask_price
+            price_matched = math.isclose(best_bid_price_no, o['price'])
+            return not price_matched and best_bid_price_no < o['price']
+        elif o['side'] == 'SELL':
+            best_ask_price_no = 1. - best_bid_price
+            price_matched = math.isclose(best_ask_price_no, o['price'])
+            return not price_matched and best_ask_price_no > o['price']
+    return False
+
+
+# If order matches an opposing order in the order_book and will be executed immediately
+def order_matches_order_book(order, order_book):
+    best_bid_price = float(order_book['bids'][0]['price'])
+    best_ask_price = float(order_book['asks'][0]['price'])
+    o = order
+    if o['type'] == 'YES':
+        if o['side'] == 'BUY':
+            is_matching = math.isclose(best_ask_price, o['price'])
+            return is_matching or o['price'] > best_ask_price
+        elif o['side'] == 'SELL':
+            is_matching = math.isclose(best_bid_price, o['price'])
+            return is_matching or o['price'] < best_bid_price
+    elif o['type'] == 'NO':
+        if o['side'] == 'BUY':
+            best_ask_price_no = 1. - best_bid_price
+            is_matching = math.isclose(best_ask_price_no, o['price'])
+            return is_matching or o['price'] > best_ask_price_no
+        elif o['side'] == 'SELL':
+            best_bid_price_no = 1. - best_ask_price
+            is_matching = math.isclose(best_bid_price_no, o['price'])
+            return is_matching or o['price'] < best_bid_price_no
+
+    return False
+
 
 class MarketMakerBot:
     def __init__(self, config, asset: Asset, get_open_price, get_latest_price, get_current_event, get_close_timestamp):
@@ -58,9 +119,7 @@ class MarketMakerBot:
         self.cash = config['PORTFOLIO_SIZE']
         self.min_order_size = None
         self.p_fair = None
-        self.order_book = {}
 
-        self.pending_limit_orders = []
 
     def run(self):
         self.update_returns()
@@ -74,10 +133,6 @@ class MarketMakerBot:
 
         while True:
             print("#" * 20)
-            self.longs = 0.
-            self.shorts = 0.
-            self.yes_shares = 0.
-            self.no_shares = 0.
 
             secs_left = self.close_timestamp - time.time()
             if secs_left <= 0:
@@ -88,23 +143,25 @@ class MarketMakerBot:
             # print(f"{mins:.0f} Minuten und {secs:.0f} Sekunden verbleibend")
 
             # 440ms
-            fetched_data = asyncio.run(self.fetch_market_data())
+            # fetched_data = asyncio.run(self.fetch_market_data())
+            fetched_data = get_mock_data()
             current_btc_price = fetched_data[0]
-            self.order_book, yes_token_id, no_token_id = fetched_data[1]
+            order_book, yes_token_id, no_token_id = fetched_data[1]
             my_trade_history = fetched_data[2]
             my_open_orders = fetched_data[3]
 
             # 70ms
-            self.p_fair = garch_monte_carlo.calculate_probability_plain(
-                returns=self.returns,
-                current_price=current_btc_price,
-                target_price=self.open_price,
-                horizon_minutes=round(mins + secs / 60),
-                num_simulations=self.config['NUM_SIMULATIONS'],
-            )
+            # self.p_fair = garch_monte_carlo.calculate_probability_plain(
+            #     returns=self.returns,
+            #     current_price=current_btc_price,
+            #     target_price=self.open_price,
+            #     horizon_minutes=max(1, round(mins + secs / 60)),
+            #     num_simulations=self.config['NUM_SIMULATIONS'],
+            # )
+            self.p_fair = get_mock_p_fair()
 
-            self.min_order_size = float(self.order_book['min_order_size'])
-            self.tick_size = float(self.order_book['tick_size'])
+            self.min_order_size = float(order_book['min_order_size'])
+            self.tick_size = float(order_book['tick_size'])
 
             # Inventory
             # my_trades = self.get_my_trades(my_trade_history)
@@ -112,10 +169,11 @@ class MarketMakerBot:
 
             # self.add_new_orders_to_pending_trades(my_open_orders)
 
-            order_plan = self.get_order_plan()
+            self.update_pending_orders(order_book)
 
+            order_plan = self.get_order_plan(order_book)
 
-            self.simulate_update_pending_orders(order_plan)
+            self.reduce_order_plan_size_based_on_pending_orders(order_plan)
 
             # self.remove_pending_orders_from_orders(my_open_orders)
 
@@ -131,9 +189,67 @@ class MarketMakerBot:
 
             # Execute orders
             # self.execute_orders(order_plan, yes_token_id, no_token_id)
-            self.simulate_execute_orders(order_plan)
+            self.simulate_execute_orders(order_plan, order_book)
 
             time.sleep(self.config['LOOP_DELAY_SECS'])
+
+    def update_inventory(self, executed_order):
+        o = executed_order
+        value = o['size'] * o['price']
+        print(f"Limit: BUY {o['size']} NO for ${o['price']:.2} (${value:.2})")
+        if o['type'] == 'YES':
+            if o['side'] == 'BUY':
+                self.yes_shares += o['size']
+                self.longs += value
+                self.cash -= value
+            elif o['side'] == 'SELL':
+                self.yes_shares -= o['size']
+                self.longs -= value
+                self.cash += value
+        elif o['type'] == 'NO':
+            if o['side'] == 'BUY':
+                self.no_shares += o['size']
+                self.shorts += value
+                self.cash -= value
+            elif o['side'] == 'SELL':
+                self.no_shares -= o['size']
+                self.shorts -= value
+                self.cash += value
+
+    def update_pending_inventory(self, pending_order):
+        o = pending_order
+        value = o['size'] * o['price']
+        if o['type'] == 'YES':
+            if o['side'] == 'BUY':
+                self.pending_longs += value
+            elif o['side'] == 'SELL':
+                self.pending_longs -= value
+        elif o['type'] == 'NO':
+            if o['side'] == 'BUY':
+                self.pending_shorts += value
+            elif o['side'] == 'SELL':
+                self.pending_shorts -= value
+
+    def print_inventory(self):
+        print("-" * 20)
+        print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
+        print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
+
+    def update_pending_orders(self, order_book):
+        new_pending_orders = []
+        self.pending_longs = 0.
+        self.pending_shorts = 0.
+
+        for o in self.pending_orders:
+            if was_executed(order_book, o):
+                self.update_inventory(o)
+                self.print_inventory()
+            else:
+                new_pending_orders.append(o)
+                self.update_pending_inventory(o)
+
+        self.pending_orders = new_pending_orders
+
 
     async def fetch_market_data(self):
         market_condition_id = self.event['markets'][0]['conditionId']
@@ -312,9 +428,9 @@ class MarketMakerBot:
         orders_to_cancel = [o for o in my_open_orders if o['id'] not in matching_open_order_ids]
         return orders_to_cancel
 
-    def get_order_plan(self):
-        best_bid = self.order_book['bids'][0]
-        best_ask = self.order_book['asks'][0]
+    def get_order_plan(self, order_book):
+        best_bid = order_book['bids'][0]
+        best_ask = order_book['asks'][0]
         best_bid_price = self.to_price(best_bid['price'])
         best_ask_price = self.to_price(best_ask['price'])
         best_bid_size = to_size(best_bid['size'])
@@ -439,175 +555,34 @@ class MarketMakerBot:
                 f"Placed: {o['side']} {o['size']} {o['type']} shares for ${o['price']} (${(o['price'] * o['size']):.2f})")
             order_value = to_size(o['size']) * self.to_price(o['price'])
 
-    def simulate_execute_orders(self, order_plan):
-        bids = self.order_book['bids']
-        asks = self.order_book['asks']
-
-        order_plan.extend(self.pending_limit_orders)
-
-        pending_longs = 0.
-        pending_shorts = 0.
-        still_pending_orders = []
-        for o in order_plan:
-            # Matching Market Orders
-            if o['type'] == 'YES':
-                if o['side'] == 'BUY':
-                    for ask in asks:
-                        if math.isclose(self.to_price(ask['price']), o['price']):
-                            size_bought = min(to_size(ask['size']), o['size'])
-                            value = size_bought * o['price']
-                            self.yes_shares += size_bought
-                            self.longs += value
-                            self.cash -= value
-                            print("-"*20)
-                            print(f"Market: BUY {size_bought} YES for {o['price']} ({value})")
-                            print(f"Longs: {self.longs}, Shorts: {self.shorts}")
-                            print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                            continue
-                elif o['side'] == 'SELL':
-                    for bid in bids:
-                        if math.isclose(self.to_price(bid['price']), o['price']):
-                            size_sold = min(to_size(bid['size']), o['size'])
-                            value = size_sold * o['price']
-                            self.yes_shares -= size_sold
-                            self.longs -= value
-                            self.cash += value
-                            print("-"*20)
-                            print(f"Market: SELL {size_sold:.2} YES for {o['price']} (${value:.2})")
-                            print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                            print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                            continue
-            elif o['type'] == 'NO':
-                if o['side'] == 'BUY':
-                    for bid in bids:
-                        if math.isclose(self.to_price(1 - float(bid['price'])), o['price']):
-                            size_bought = min(to_size(bid['size']), o['size'])
-                            value = size_bought * o['price']
-                            self.no_shares += size_bought
-                            self.shorts += value
-                            self.cash -= value
-                            print("-"*20)
-                            print(f"Market: BUY {size_bought} NO for ${o['price']:.2} (${value:.2})")
-                            print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                            print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                            continue
-                elif o['side'] == 'SELL':
-                    for ask in asks:
-                        if math.isclose(self.to_price(1 - float(ask['price'])), o['price']):
-                            size_sold = min(to_size(ask['size']), o['size'])
-                            value = size_sold * o['price']
-                            self.no_shares -= size_sold
-                            self.shorts -= value
-                            self.cash += value
-                            print("-"*20)
-                            print(f"Market: SELL {size_sold} NO for ${o['price']:.2} (${value:.2})")
-                            print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                            print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                            continue
-
-            # Pending Limit Orders
-            if o['type'] == 'YES':
-                if o['side'] == 'BUY':
-                    matched = False
-                    for bid in bids:
-                        if math.isclose(self.to_price(bid['price']), o['price']):
-                            matched = True
-                    value = o['size'] * o['price']
-                    if not matched:
-                        self.yes_shares += o['size']
-                        self.longs += value
-                        self.cash -= value
-                        print("-" * 20)
-                        print(f"Limit: BUY {o['size']} YES for ${o['price']:.2} (${value:.2})")
-                        print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                        print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                    else:
-                        still_pending_orders.append(o)
-                        pending_longs += value
-                elif o['side'] == 'SELL':
-                    matched = False
-                    for ask in asks:
-                        if math.isclose(self.to_price(ask['price']), o['price']):
-                            matched = True
-                    value = o['size'] * o['price']
-                    if not matched:
-                        self.yes_shares -= o['size']
-                        self.longs -= value
-                        self.cash += value
-                        print("-" * 20)
-                        print(f"Limit: SELL {o['size']} YES for ${o['price']:.2} (${value:.2})")
-                        print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                        print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                    else:
-                        still_pending_orders.append(o)
-                        pending_longs -= value
-            elif o['type'] == 'NO':
-                if o['side'] == 'BUY':
-                    matched = False
-                    for ask in asks:
-                        if math.isclose(self.to_price(1 - float(ask['price'])), o['price']):
-                            matched = True
-                    value = o['size'] * o['price']
-                    if not matched:
-                        self.no_shares += o['size']
-                        self.shorts += value
-                        self.cash -= value
-                        print("-" * 20)
-                        print(f"Limit: BUY {o['size']} NO for ${o['price']:.2} (${value:.2})")
-                        print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                        print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                    else:
-                        still_pending_orders.append(o)
-                        pending_shorts += value
-                elif o['side'] == 'SELL':
-                    matched = False
-                    for bid in bids:
-                        if math.isclose(self.to_price(1 - float(bid['price'])), o['price']):
-                            matched = True
-                    value = o['size'] * o['price']
-                    if not matched:
-                        self.no_shares -= o['size']
-                        self.shorts -= value
-                        self.cash += value
-                        print("-" * 20)
-                        print(f"Limit: SELL {o['size']} NO for ${o['price']:.2} (${value:.2})")
-                        print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
-                        print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
-                    else:
-                        still_pending_orders.append(o)
-                        pending_shorts -= value
-
-        self.pending_limit_orders = still_pending_orders
-        self.pending_longs = pending_longs
-        self.pending_shorts = pending_shorts
-
-    def simulate_update_pending_orders(self, order_plan):
+    def simulate_execute_orders(self, order_plan, order_book):
+        order_plan.extend(self.pending_orders)
         new_pending_orders = []
-        pending_longs = 0.
-        pending_shorts = 0.
-        for p in self.pending_limit_orders:
-            for o in order_plan:
-                if (p['type'] == o['type']
-                        and p['side'] == o['side']
-                        and math.isclose(p['price'], o['price'])):
-                    if p['size'] <= o['size'] + 1e-4:
-                        o['size'] -= p['size']
-                        value = p['size'] * p['price']
-                        new_pending_orders.append(p)
-                        if p['type'] == 'YES':
-                            if p['side'] == 'BUY':
-                                pending_longs += value
-                            elif p['side'] == 'SELL':
-                                pending_longs -= value
-                        elif p['type'] == 'NO':
-                            if p['side'] == 'BUY':
-                                pending_shorts += value
-                            elif p['side'] == 'SELL':
-                                pending_shorts -= value
 
-        self.pending_limit_orders = new_pending_orders
-        self.pending_longs = pending_longs
-        self.pending_shorts = pending_shorts
+        for o in order_plan:
+            if order_matches_order_book(o, order_book):
+                self.update_inventory(o)
+            else:
+                new_pending_orders.append(o)
+                self.update_pending_inventory(o)
+
+        self.pending_orders = new_pending_orders
+
+    # Reduce current orders size by matching open orders size
+    # if is matching and p_size > o_size: cancel pending order
+    def reduce_order_plan_size_based_on_pending_orders(self, order_plan):
+        self.pending_longs = 0.
+        self.pending_shorts = 0.
+        new_pending_orders = []
+        for p in self.pending_orders:
+            for o in order_plan:
+                if is_matching(o, p) and less_than(p['size'], o['size']):
+                    o['size'] -= p['size']
+                    new_pending_orders.append(p)
+                    self.update_pending_inventory(o)
+
+        self.pending_orders = new_pending_orders
+
 
     def clamp_price(self, x):
         low = self.tick_size
@@ -615,7 +590,8 @@ class MarketMakerBot:
         return max(low, min(x, high))
 
     def to_price(self, x):
-        return self.clamp_price(math.floor(float(x) * 100) / 100)
+        a = 1 / self.tick_size
+        return self.clamp_price(round(float(x) * a) / a)
 
 
 if __name__ == "__main__":
@@ -624,7 +600,7 @@ if __name__ == "__main__":
         "MAX_POSITION_PERCENT": 0.5, # Dispute window is 1-2 hours
         "RISK_THRESHOLD": 0.005, # 0.5 %
         "LIMIT_ORDER_SIZE": 10,
-        "LOOP_DELAY_SECS": 0,
+        "LOOP_DELAY_SECS": 1,
         "NUM_SIMULATIONS": 1_000_000
     }
 

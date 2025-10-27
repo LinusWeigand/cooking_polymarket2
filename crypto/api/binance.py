@@ -29,14 +29,11 @@ def get_bitcoin_1h_open_price():
     return float(open_price)
 
 def get_latest_bitcoin_price():
-    start = time.time_ns()
     url = "https://api.binance.com/api/v3/ticker/price"
     params = {"symbol": "BTCUSDT"}
     response = requests.get(url, params=params)
     response.raise_for_status()
     data = response.json()
-    elapsed_ns = time.time_ns() - start
-    print(f"Binance call: {(elapsed_ns / 1_000_000):.2}ms")
     return float(data['price'])
 
 
