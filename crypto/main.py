@@ -564,88 +564,59 @@ class MarketMakerBot:
         short_inventory_left = max_inventory - self.shorts
         order_plan = []
 
-        if long_inventory_left >= 1. and not no_bid:
-            if sniping_ask:
-                if self.no_shares >= self.min_order_size:
-                    price = self.to_price(1. - best_ask_price)
-                    target_size = to_size(long_inventory_left / price)
-                    size = min(best_ask_size, target_size)
-                    size = min(to_size(self.no_shares), size)
-                    order_plan.append({
-                        'price': price,
-                        'size': size,
-                        'side': 'SELL',
-                        'type': 'NO'
-                    })
-                else:
-                    target_size = to_size(long_inventory_left / best_ask_price)
-                    size = min(target_size, best_ask_size)
-                    order_plan.append({
-                        'price': best_ask_price,
-                        'size': size,
-                        'side': 'BUY',
-                        'type': 'YES'
-                    })
-            else:
-                if self.no_shares >= self.min_order_size:
-                    price = self.to_price(1. - my_best_bid_price)
-                    size = to_size(long_inventory_left / price)
-                    order_plan.append({
-                        'price': price,
-                        'size': size,
-                        'side': 'SELL',
-                        'type': 'NO'
-                    })
-                else:
-                    size = to_size(long_inventory_left / my_best_bid_price)
-                    order_plan.append({
-                        'price': my_best_bid_price,
-                        'size': size,
-                        'side': 'BUY',
-                        'type': 'YES'
-                    })
-
-        if short_inventory_left >= 1. and not no_ask:
+        # Sell old positions
+        if self.yes_shares >= self.min_order_size:
+            price = my_best_ask_price
+            size = to_size(self.yes_shares)
             if sniping_bid:
-                if self.yes_shares >= self.min_order_size:
-                    target_size = to_size(short_inventory_left / best_bid_price)
-                    size = min(target_size, best_bid_size)
-                    size = min(size, to_size(self.yes_shares))
-                    order_plan.append({
-                        'price': best_bid_price,
-                        'size': size,
-                        'side': 'SELL',
-                        'type': 'YES'
-                    })
-                else:
-                    price = self.to_price(1. - best_bid_price)
-                    target_size = to_size(short_inventory_left / price)
-                    size = min(target_size, best_bid_size)
-                    order_plan.append({
-                        'price': price,
-                        'size': size,
-                        'side': 'BUY',
-                        'type': 'NO'
-                    })
-            else:
-                if self.yes_shares >= self.min_order_size:
-                    target_size = to_size(short_inventory_left / my_best_ask_price)
-                    size = min(to_size(self.yes_shares), target_size)
-                    order_plan.append({
-                        'price': my_best_ask_price,
-                        'size': size,
-                        'side': 'SELL',
-                        'type': 'YES'
-                    })
-                else:
-                    price = self.to_price(1. - my_best_ask_price)
-                    size = to_size(short_inventory_left / price)
-                    order_plan.append({
-                        'price': price,
-                        'size': size,
-                        'side': 'BUY',
-                        'type': 'NO'
-                    })
+                price = best_bid_price
+                size = min(best_bid_size, size)
+            order_plan.append({
+                'price': price,
+                'size': size,
+                'side': 'SELL',
+                'type': 'YES'
+            })
+        if self.no_shares >= self.min_order_size:
+            price = self.to_price(1. - my_best_bid_price)
+            size = to_size(self.no_shares)
+            if sniping_ask:
+                price = self.to_price(1. - best_ask_price)
+                size = min(best_ask_size, size)
+            order_plan.append({
+                'price': price,
+                'size': size,
+                'side': 'SELL',
+                'type': 'NO'
+            })
+
+        # Open new positions
+        if long_inventory_left >= 1. and not no_bid:
+            size = to_size(long_inventory_left / my_best_bid_price)
+            price = my_best_bid_price
+            if sniping_ask:
+                size = to_size(long_inventory_left / best_ask_price)
+                size = min(size, best_ask_size)
+                price = best_ask_price
+            order_plan.append({
+                'price': price,
+                'size': size,
+                'side': 'BUY',
+                'type': 'YES'
+            })
+        if short_inventory_left >= 1. and not no_ask:
+            price = self.to_price(1. - my_best_ask_price)
+            size = to_size(short_inventory_left / price)
+            if sniping_bid:
+                price = self.to_price(1. - best_bid_price)
+                size = to_size(short_inventory_left / price)
+                size = min(size, best_bid_size)
+            order_plan.append({
+                'price': price,
+                'size': size,
+                'side': 'BUY',
+                'type': 'NO'
+            })
 
         return order_plan
 
