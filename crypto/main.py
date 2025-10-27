@@ -600,7 +600,7 @@ class MarketMakerBot:
                 size = long_inventory_left / best_ask_price
                 size = min(size, best_ask_size)
                 price = best_ask_price
-            size = min(max_payout - self.yes_shares, size, 0)
+            size = min(max_payout - self.yes_shares, size)
             if size >= self.min_order_size:
                 order_plan.append({
                     'price': price,
@@ -615,7 +615,7 @@ class MarketMakerBot:
                 price = self.to_price(1. - best_bid_price)
                 size = to_size(short_inventory_left / price)
                 size = min(size, best_bid_size)
-            size = min(max_payout - self.no_shares, size, 0)
+            size = min(max_payout - self.no_shares, size)
             if size >= self.min_order_size:
                 order_plan.append({
                     'price': price,
