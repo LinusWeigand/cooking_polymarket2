@@ -66,23 +66,14 @@ async def get_my_open_orders_async(clob_client, condition_id=None):
     return await asyncio.to_thread(get_my_open_orders, clob_client, condition_id)
 # 15 requests per second allowed
 def get_my_open_orders(client, condition_id=None, token_id=None):
-    """Get all open orders for the user"""
-    # start = time.time_ns()
-    try:
-        params = OpenOrderParams()
-        if condition_id:
-            params.market = condition_id
-        if token_id:
-            params.asset_id = token_id
+    params = OpenOrderParams()
+    if condition_id:
+        params.market = condition_id
+    if token_id:
+        params.asset_id = token_id
 
-        orders = client.get_orders(params)
-        # print(f"Found {len(orders)} open orders")
-        # elapsed_ns = time.time_ns() - start
-        # print(f"Get Open Orders : {elapsed_ns // 1_000_000} ms")
-        return orders
-    except Exception as e:
-        print(f"Error getting open orders: {e}")
-        return []
+    orders = client.get_orders(params)
+    return orders
 
 # Place & Cancel: 240 requests per second allowed
 def place_order(client, token_id: str, price: float, size: float, side: str):
@@ -111,21 +102,13 @@ async def get_my_trade_history_async(clob_client, condition_id=None):
 
 def get_my_trade_history(client, condition_id=None):
     """Get trade history for the user, optionally filtered by market"""
-    # start = time.time_ns()
+    params = TradeParams()
 
-    try:
-        params = TradeParams()
+    if condition_id:
+        params.market = condition_id
 
-        if condition_id:
-            params.market = condition_id
-
-        trades = client.get_trades(params)
-        # elapsed_ns = time.time_ns() - start
-        # print(f"Get Trade History : {elapsed_ns // 1_000_000} ms")
-        return trades
-    except Exception as e:
-        print(f"Error getting trade history: {e}")
-        return []
+    trades = client.get_trades(params)
+    return trades
 
 
 def get_client():

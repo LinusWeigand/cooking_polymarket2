@@ -40,20 +40,14 @@ def get_latest_bitcoin_price():
 # 20 requests per second at most
 # We only do 4 requests per second right now
 async def get_latest_bitcoin_price_async(http_client: httpx.AsyncClient):
-    # start = time.time_ns()
     url = "https://api.binance.com/api/v3/ticker/price"
     params = {"symbol": "BTCUSDT"}
-    try:
-        response = await http_client.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        # elapsed_ns = time.time_ns() - start
-        # print(f"Binance call: {elapsed_ns // 1_000_000} ms")
-        return float(data['price'])
-    except httpx.HTTPError as e:
-        print(f"Error fetching BTC price: {e}")
-        return None
 
+    response = await http_client.get(url, params=params)
+    response.raise_for_status()
+    data = response.json()
+
+    return float(data['price'])
 
 def fetch_candles(limit=LIMIT, startTime=None, endTime=None):
     """Fetches k-line candle data from Binance."""

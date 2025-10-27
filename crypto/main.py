@@ -195,8 +195,8 @@ class MarketMakerBot:
             # print(f"{mins:.0f} Minuten und {secs:.0f} Sekunden verbleibend")
 
             # 440ms
-            fetched_data = asyncio.run(self.fetch_market_data())
             # fetched_data = get_mock_data()
+            fetched_data = asyncio.run(self.fetch_market_data())
             current_btc_price = fetched_data[0]
             order_book, yes_token_id, no_token_id = fetched_data[1]
             my_trade_history = fetched_data[2]
@@ -363,16 +363,29 @@ class MarketMakerBot:
         self.pending_orders = new_pending_orders
 
 
-    async def fetch_market_data(self):
+    async def fetch_market_data(self, max_retries=5, initial_delay=1.0, backoff_factor=2.0):
         market_condition_id = self.event['markets'][0]['conditionId']
         async with httpx.AsyncClient() as http_client:
-            tasks = [
-                get_latest_bitcoin_price_async(http_client),
-                get_order_book_with_token_ids_async(http_client, self.event),
-                get_my_trade_history_async(self.client, condition_id=market_condition_id),
-                get_my_open_orders_async(self.client, condition_id=market_condition_id),
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for attempt in range(max_retries):
+                try:
+                    tasks = [
+                        get_latest_bitcoin_price_async(http_client),
+                        get_order_book_with_token_ids_async(http_client, self.event),
+                        get_my_trade_history_async(self.client, condition_id=market_condition_id),
+                        get_my_open_orders_async(self.client, condition_id=market_condition_id),
+                    ]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    errors = [res for res in results if isinstance(res, Exception)]
+                    if not errors:
+                        return results
+                    if attempt >= max_retries - 1:
+                        raise errors[0]
+                except Exception as e:
+                    if attempt >= max_retries - 1:
+                        raise e
+
+                delay = (initial_delay * (backoff_factor ** attempt))
+                await asyncio.sleep(delay)
 
         return results
 

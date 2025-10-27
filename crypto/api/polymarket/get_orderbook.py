@@ -46,22 +46,21 @@ async def get_order_book_with_token_ids_async(http_client: httpx.AsyncClient, ev
     no_token_id = next(
         (tid for tid, outcome in token_to_outcome.items() if outcome.lower() == "down" or outcome.lower() == "no"), None)
 
+    if not yes_token_id or not no_token_id:
+        raise ValueError("Could not determine 'yes' or 'no' token ID from event data.")
+
     url = f"{CLOB_API_BASE}/books"
     payload = {"token_id": yes_token_id},
 
     headers = {"Content-Type": "application/json"}
-    try:
-        resp = await http_client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        yes_order_book = resp.json()[0]
-        yes_order_book['bids'].sort(key=lambda x: float(x['price']), reverse=True)
-        yes_order_book['asks'].sort(key=lambda x: float(x['price']))
-        # elapsed_ns = time.time_ns() - start
-        # print(f"Get Orderbook : {elapsed_ns // 1_000_000} ms")
-        return yes_order_book, yes_token_id, no_token_id
-    except httpx.HTTPError as e:
-        print(f"Error fetching order book: {e}")
-        return None, None, None
+
+    resp = await http_client.post(url, headers=headers, json=payload)
+    resp.raise_for_status()
+    yes_order_book = resp.json()[0]
+    yes_order_book['bids'].sort(key=lambda x: float(x['price']), reverse=True)
+    yes_order_book['asks'].sort(key=lambda x: float(x['price']))
+
+    return yes_order_book, yes_token_id, no_token_id
 
 if __name__ == "__main__":
     event = get_current_event(Asset.Bitcoin)
