@@ -39,25 +39,27 @@ def less_than(a, b):
 # If previous Limit Order (Pending Order) was executed
 # We assume Limit Orders are executed if better than the best offer
 def was_executed(order_book, limit_order):
-    best_bid_price = float(order_book['bids'][0]['price'])
-    best_ask_price = float(order_book['asks'][0]['price'])
+    bids = order_book['bids']
+    asks = order_book['asks']
+    best_bid_price = float(bids[0]['price']) if len(bids) > 0 else None
+    best_ask_price = float(asks[0]['price']) if len(asks) > 0 else None
     o = limit_order
     if o['type'] == 'YES':
         if o['side'] == 'BUY':
             price_matched = math.isclose(best_bid_price, o['price'])
-            return not price_matched and best_bid_price < o['price']
+            return best_bid_price is None or not price_matched and best_bid_price < o['price']
         elif o['side'] == 'SELL':
             price_matched = math.isclose(best_ask_price, o['price'])
-            return not price_matched and best_ask_price > o['price']
+            return best_ask_price is None or not price_matched and best_ask_price > o['price']
     elif o['type'] == 'NO':
         if o['side'] == 'BUY':
             best_bid_price_no = 1. - best_ask_price
             price_matched = math.isclose(best_bid_price_no, o['price'])
-            return not price_matched and best_bid_price_no < o['price']
+            return best_ask_price is None or  not price_matched and best_bid_price_no < o['price']
         elif o['side'] == 'SELL':
             best_ask_price_no = 1. - best_bid_price
             price_matched = math.isclose(best_ask_price_no, o['price'])
-            return not price_matched and best_ask_price_no > o['price']
+            return best_bid_price is None or not price_matched and best_ask_price_no > o['price']
     return False
 
 
@@ -103,22 +105,17 @@ class MarketMakerBot:
         self.get_current_event = get_current_event
         self.get_close_timestamp = get_close_timestamp
 
-        # self.close_timestamp = self.get_close_timestamp()
-        self.close_timestamp = time.time()
-        # self.open_price = self.get_open_price()
-        self.open_price = 100_000
-        # self.event = self.get_current_event(asset)
-        self.event = None
+        self.close_timestamp = self.get_close_timestamp()
+        self.open_price = self.get_open_price()
+        self.event = self.get_current_event(asset)
         self.asset = asset
         self.tick_size = 0.01
 
         self.file_lock = threading.Lock()
-        # self.candle_manager = CandleManager(self.file_lock, self.read_returns())
-        self.candle_manager = None
+        self.candle_manager = CandleManager(self.file_lock, self.read_returns())
         self.returns = None
 
-        # self.client = get_client()
-        self.client = None
+        self.client = get_client()
         self.address = os.getenv("POLYMARKET_PROXY_ADDRESS")
 
         self.cash = config['PORTFOLIO_SIZE']
@@ -127,11 +124,11 @@ class MarketMakerBot:
 
 
     def run(self):
-        # self.read_returns()
+        self.read_returns()
 
-        # if not update_allowances(self.client):
-        #    print("Failed to update allowances. Exiting.")
-        #     exit(1)
+        if not update_allowances(self.client):
+           print("Failed to update allowances. Exiting.")
+           exit(1)
 
         # self.candle_manager.start()
         # print(self.event)
@@ -139,31 +136,32 @@ class MarketMakerBot:
         while True:
             print("#" * 20)
 
-            # secs_left = self.close_timestamp - time.time()
-            # if secs_left <= 0:
-                # self.switch_events()
-                # continue
-            # mins = secs_left // 60
-            # secs = secs_left % 60
+            secs_left = self.close_timestamp - time.time()
+            if secs_left <= 0:
+                self.switch_events()
+                continue
+            mins = secs_left // 60
+            secs = secs_left % 60
             # print(f"{mins:.0f} Minuten und {secs:.0f} Sekunden verbleibend")
 
             # 440ms
-            # fetched_data = asyncio.run(self.fetch_market_data())
-            fetched_data = get_mock_data()
+            fetched_data = asyncio.run(self.fetch_market_data())
+            # fetched_data = get_mock_data()
             current_btc_price = fetched_data[0]
             order_book, yes_token_id, no_token_id = fetched_data[1]
             my_trade_history = fetched_data[2]
             my_open_orders = fetched_data[3]
 
             # 70ms
-            # self.p_fair = garch_monte_carlo.calculate_probability_plain(
-            #     returns=self.returns,
-            #     current_price=current_btc_price,
-            #     target_price=self.open_price,
-            #     horizon_minutes=max(1, round(mins + secs / 60)),
-            #     num_simulations=self.config['NUM_SIMULATIONS'],
-            # )
-            self.p_fair = get_mock_p_fair()
+            self.p_fair = garch_monte_carlo.calculate_probability_plain(
+                returns=self.returns,
+                current_price=current_btc_price,
+                target_price=self.open_price,
+                horizon_minutes=max(1, round(mins + secs / 60)),
+                num_simulations=self.config['NUM_SIMULATIONS'],
+            )
+            # self.p_fair = get_mock_p_fair()
+            print(f"p_fair: {self.p_fair}")
 
             self.min_order_size = float(order_book['min_order_size'])
             self.tick_size = float(order_book['tick_size'])
@@ -198,6 +196,7 @@ class MarketMakerBot:
 
             print(self.pending_orders)
 
+            print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2f}")
             time.sleep(self.config['LOOP_DELAY_SECS'])
 
     def update_inventory(self, executed_order):
@@ -551,7 +550,6 @@ class MarketMakerBot:
                         'type': 'NO'
                     })
 
-        print(f"Order Plan: {order_plan}")
         return order_plan
 
     def execute_orders(self, order_plan, yes_token_id, no_token_id):
@@ -628,7 +626,7 @@ if __name__ == "__main__":
         "MAX_POSITION_PERCENT": 0.5, # Dispute window is 1-2 hours
         "RISK_THRESHOLD": 0.005, # 0.5 %
         "LIMIT_ORDER_SIZE": 10,
-        "LOOP_DELAY_SECS": 1,
+        "LOOP_DELAY_SECS": 0,
         "NUM_SIMULATIONS": 1_000_000
     }
 
