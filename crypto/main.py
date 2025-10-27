@@ -90,46 +90,28 @@ def order_matches_order_book(order, order_book):
 
     return False
 
-def get_market_sell_value(order, order_book):
+def get_market_sell_value(position, order_book):
     bids = order_book['bids']
     asks = order_book['asks']
-    o = order
-    size = o['size']
+    p = position
+    size = p['size']
     value = 0.
-    if o['type'] == 'YES':
-        if o['side'] == 'BUY':
-            for ask in asks:
-                price = float(ask['price'])
-                size_matched = min(size, price)
-                value += size_matched * price
-                size -= size_matched
-                if size < 0.01:
-                    return value
-        elif o['side'] == 'SELL':
-            for bid in bids:
-                price = float(bid['price'])
-                size_matched = min(size, price)
-                value += size_matched * price
-                size -= size_matched
-                if size < 0.01:
-                    return value
-    elif o['type'] == 'NO':
-        if o['side'] == 'BUY':
-            for bid in bids:
-                price = 1. - float(bid['price'])
-                size_matched = min(size, price)
-                value += size_matched * price
-                size -= size_matched
-                if size < 0.01:
-                    return value
-        elif o['side'] == 'SELL':
-            for ask in asks:
-                price = 1. - float(ask['price'])
-                size_matched = min(size, price)
-                value += size_matched * price
-                size -= size_matched
-                if size < 0.01:
-                    return value
+    if p['type'] == 'YES':
+        for bid in bids:
+            price = float(bid['price'])
+            size_matched = min(size, float(bid['size']))
+            value += size_matched * price
+            size -= size_matched
+            if size < 0.01:
+                return value
+    elif p['type'] == 'NO':
+        for ask in asks:
+            price = 1. - float(ask['price'])
+            size_matched = min(size, float(ask['size']))
+            value += size_matched * price
+            size -= size_matched
+            if size < 0.01:
+                return value
     return value
 
 
@@ -267,11 +249,11 @@ class MarketMakerBot:
     def get_position_value(self, order_book):
         value = 0.
         if self.yes_shares >= self.min_order_size:
-            order = {'type': 'YES', 'side': 'SELL', 'size': self.yes_shares}
-            value += get_market_sell_value(order, order_book)
+            position = {'type': 'YES', 'size': self.yes_shares}
+            value += get_market_sell_value(position, order_book)
         if self.no_shares >= self.min_order_size:
-            order = {'type': 'NO', 'side': 'SELL', 'size': self.no_shares}
-            value += get_market_sell_value(order, order_book)
+            position = {'type': 'NO', 'size': self.no_shares}
+            value += get_market_sell_value(position, order_book)
         return value
 
 
@@ -355,7 +337,6 @@ class MarketMakerBot:
                 self.update_inventory(o)
                 self.add_order_to_logs(o, order_book)
                 self.print_logs()
-                self.print_inventory()
             else:
                 new_pending_orders.append(o)
                 self.update_pending_inventory(o)
