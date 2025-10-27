@@ -13,6 +13,7 @@ import threading
 import pandas as pd
 import os
 import sys
+import datetime
 
 from crypto.tests.simulate_event import get_mock_data, get_mock_p_fair
 from crypto.utils import Asset, get_next_hour_timestamp
@@ -41,32 +42,34 @@ def less_than(a, b):
 def was_executed(order_book, limit_order):
     bids = order_book['bids']
     asks = order_book['asks']
-    best_bid_price = float(bids[0]['price']) if len(bids) > 0 else None
-    best_ask_price = float(asks[0]['price']) if len(asks) > 0 else None
+    best_bid_price = float(bids[0]['price']) if len(bids) > 0 else 0.
+    best_ask_price = float(asks[0]['price']) if len(asks) > 0 else 1.
     o = limit_order
     if o['type'] == 'YES':
         if o['side'] == 'BUY':
             price_matched = math.isclose(best_bid_price, o['price'])
-            return best_bid_price is None or not price_matched and best_bid_price < o['price']
+            return not price_matched and best_bid_price < o['price']
         elif o['side'] == 'SELL':
             price_matched = math.isclose(best_ask_price, o['price'])
-            return best_ask_price is None or not price_matched and best_ask_price > o['price']
+            return not price_matched and best_ask_price > o['price']
     elif o['type'] == 'NO':
         if o['side'] == 'BUY':
             best_bid_price_no = 1. - best_ask_price
             price_matched = math.isclose(best_bid_price_no, o['price'])
-            return best_ask_price is None or  not price_matched and best_bid_price_no < o['price']
+            return not price_matched and best_bid_price_no < o['price']
         elif o['side'] == 'SELL':
             best_ask_price_no = 1. - best_bid_price
             price_matched = math.isclose(best_ask_price_no, o['price'])
-            return best_bid_price is None or not price_matched and best_ask_price_no > o['price']
+            return not price_matched and best_ask_price_no > o['price']
     return False
 
 
 # If order matches an opposing order in the order_book and will be executed immediately
 def order_matches_order_book(order, order_book):
-    best_bid_price = float(order_book['bids'][0]['price'])
-    best_ask_price = float(order_book['asks'][0]['price'])
+    bids = order_book['bids']
+    asks = order_book['asks']
+    best_bid_price = float(bids[0]['price']) if len(bids) > 0 else 0.
+    best_ask_price = float(asks[0]['price']) if len(asks) > 0 else 1.
     o = order
     if o['type'] == 'YES':
         if o['side'] == 'BUY':
@@ -86,6 +89,51 @@ def order_matches_order_book(order, order_book):
             return is_matching or o['price'] < best_bid_price_no
 
     return False
+
+def get_market_sell_value(order, order_book):
+    bids = order_book['bids']
+    asks = order_book['asks']
+    o = order
+    size = o['size']
+    value = 0.
+    if o['type'] == 'YES':
+        if o['side'] == 'BUY':
+            for ask in asks:
+                price = float(ask['price'])
+                size_matched = min(size, price)
+                value += size_matched * price
+                size -= size_matched
+                if size < 0.01:
+                    return value
+        elif o['side'] == 'SELL':
+            for bid in bids:
+                price = float(bid['price'])
+                size_matched = min(size, price)
+                value += size_matched * price
+                size -= size_matched
+                if size < 0.01:
+                    return value
+    elif o['type'] == 'NO':
+        if o['side'] == 'BUY':
+            for bid in bids:
+                price = 1. - float(bid['price'])
+                size_matched = min(size, price)
+                value += size_matched * price
+                size -= size_matched
+                if size < 0.01:
+                    return value
+        elif o['side'] == 'SELL':
+            for ask in asks:
+                price = 1. - float(ask['price'])
+                size_matched = min(size, price)
+                value += size_matched * price
+                size -= size_matched
+                if size < 0.01:
+                    return value
+    return value
+
+
+
 
 
 class MarketMakerBot:
@@ -122,6 +170,8 @@ class MarketMakerBot:
         self.min_order_size = None
         self.p_fair = None
 
+        self.logs = []
+
 
     def run(self):
         self.read_returns()
@@ -134,7 +184,7 @@ class MarketMakerBot:
         # print(self.event)
 
         while True:
-            print("#" * 20)
+            print("_" * 60)
 
             secs_left = self.close_timestamp - time.time()
             if secs_left <= 0:
@@ -194,10 +244,36 @@ class MarketMakerBot:
             # self.execute_orders(order_plan, yes_token_id, no_token_id)
             self.simulate_execute_orders(order_plan, order_book)
 
-            print(self.pending_orders)
+            print(f"Pending: {self.pending_orders}")
+            self.print_positions(order_book)
 
-            print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2f}")
+
+            position_value = self.get_position_value(order_book)
+            print(f"PnL: ${(self.cash + position_value - self.config['PORTFOLIO_SIZE']):.2f}")
             time.sleep(self.config['LOOP_DELAY_SECS'])
+
+    def print_positions(self, order_book):
+        yes_value = 0.
+        no_value = 0.
+        if self.yes_shares >= self.min_order_size:
+            order = {'type': 'YES', 'side': 'SELL', 'size': self.yes_shares}
+            yes_value += get_market_sell_value(order, order_book)
+        if self.no_shares >= self.min_order_size:
+            order = {'type': 'NO', 'side': 'SELL', 'size': self.no_shares}
+            no_value += get_market_sell_value(order, order_book)
+        print(f"YES: ${yes_value:.2f}, NO: ${no_value:.2f}")
+
+
+    def get_position_value(self, order_book):
+        value = 0.
+        if self.yes_shares >= self.min_order_size:
+            order = {'type': 'YES', 'side': 'SELL', 'size': self.yes_shares}
+            value += get_market_sell_value(order, order_book)
+        if self.no_shares >= self.min_order_size:
+            order = {'type': 'NO', 'side': 'SELL', 'size': self.no_shares}
+            value += get_market_sell_value(order, order_book)
+        return value
+
 
     def update_inventory(self, executed_order):
         o = executed_order
@@ -241,6 +317,33 @@ class MarketMakerBot:
         print(f"Longs: ${self.longs:.2}, Shorts: ${self.shorts:.2}")
         print(f"PnL: ${(self.cash + self.longs + self.shorts - self.config['PORTFOLIO_SIZE']):.2}")
 
+    def add_order_to_logs(self, order, order_book):
+        o = order
+        bids = order_book['bids']
+        asks = order_book['asks']
+        best_bid_price = float(bids[0]['price']) if len(bids) > 0 else 0.
+        best_ask_price = float(asks[0]['price']) if len(asks) > 0 else 1.
+        self.logs.append({
+            'time': time.time(),
+            'type': o['type'],
+            'side': o['side'],
+            'size': o['size'],
+            'price': o['price'],
+            'best_bid': best_bid_price,
+            'best_ask': best_ask_price,
+            'p_fair': self.p_fair
+        })
+
+    def print_logs(self):
+        print("#" * 100)
+
+        for o in self.logs:
+            dt_object = datetime.datetime.fromtimestamp(o['time'])
+            time_string = dt_object.strftime("%H:%M:%S")
+            print(f"{time_string} {o['side']} {o['type']} @ ${o['price']:.2f} | Best Bid: ${o['best_bid']:.2f}, Best Ask: ${o['best_ask']:.2f}, P_fair: {o['p_fair']}")
+
+        print("#" * 100)
+
     def update_pending_orders(self, order_book):
         new_pending_orders = []
         self.pending_longs = 0.
@@ -250,6 +353,8 @@ class MarketMakerBot:
             if was_executed(order_book, o):
                 print("LIMIT")
                 self.update_inventory(o)
+                self.add_order_to_logs(o, order_book)
+                self.print_logs()
                 self.print_inventory()
             else:
                 new_pending_orders.append(o)
@@ -436,12 +541,14 @@ class MarketMakerBot:
         return orders_to_cancel
 
     def get_order_plan(self, order_book):
-        best_bid = order_book['bids'][0]
-        best_ask = order_book['asks'][0]
-        best_bid_price = self.to_price(best_bid['price'])
-        best_ask_price = self.to_price(best_ask['price'])
-        best_bid_size = to_size(best_bid['size'])
-        best_ask_size = to_size(best_ask['size'])
+        bids = order_book['bids']
+        asks = order_book['asks']
+        best_bid = bids[0] if len(bids) > 0 else None
+        best_ask = asks[0] if len(asks) > 0 else None
+        best_bid_price = self.to_price(best_bid['price']) if not best_bid is None else 0.
+        best_ask_price = self.to_price(best_ask['price']) if not best_ask is None else 1.
+        best_bid_size = to_size(best_bid['size']) if not best_bid is None else 0.
+        best_ask_size = to_size(best_ask['size']) if not best_ask is None else 0.
 
         print(f"Best Bid: {best_bid_price}, Best Ask: {best_ask_price}")
 
@@ -457,10 +564,10 @@ class MarketMakerBot:
 
         sniping_bid, sniping_ask = self.get_snipe_mode(best_bid_price, best_ask_price)
 
-        if sniping_bid:
-            print("Sniping Bid")
-        if sniping_ask:
-            print("Sniping Ask")
+        # if sniping_bid:
+            # print("Sniping Bid")
+        # if sniping_ask:
+            # print("Sniping Ask")
 
         max_inventory = self.config['MAX_INVENTORY']
         long_inventory_left = max_inventory - self.longs
@@ -585,6 +692,8 @@ class MarketMakerBot:
             if order_matches_order_book(o, order_book):
                 print("Market")
                 self.update_inventory(o)
+                self.add_order_to_logs(o, order_book)
+                self.print_logs()
             else:
                 new_pending_orders.append(o)
                 self.update_pending_inventory(o)

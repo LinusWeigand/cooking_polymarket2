@@ -11,7 +11,7 @@ SYMBOL = "BTCUSDT"
 INTERVAL = "1m"
 LIMIT = 1000
 FILENAME = "../../data/btc_1m_log_returns.csv"
-WINDOW_SIZE = 10000
+WINDOW_SIZE = 100000
 
 
 def get_bitcoin_1h_open_price():
