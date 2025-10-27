@@ -114,10 +114,6 @@ def get_market_sell_value(position, order_book):
                 return value
     return value
 
-
-
-
-
 class MarketMakerBot:
     def __init__(self, config, asset: Asset, get_open_price, get_latest_price, get_current_event, get_close_timestamp):
         self.yes_shares = 0.
