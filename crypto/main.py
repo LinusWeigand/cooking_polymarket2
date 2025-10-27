@@ -103,17 +103,22 @@ class MarketMakerBot:
         self.get_current_event = get_current_event
         self.get_close_timestamp = get_close_timestamp
 
-        self.close_timestamp = self.get_close_timestamp()
-        self.open_price = self.get_open_price()
-        self.event = self.get_current_event(asset)
+        # self.close_timestamp = self.get_close_timestamp()
+        self.close_timestamp = time.time()
+        # self.open_price = self.get_open_price()
+        self.open_price = 100_000
+        # self.event = self.get_current_event(asset)
+        self.event = None
         self.asset = asset
         self.tick_size = 0.01
 
         self.file_lock = threading.Lock()
-        self.candle_manager = CandleManager(self.file_lock, self.update_returns)
+        # self.candle_manager = CandleManager(self.file_lock, self.read_returns())
+        self.candle_manager = None
         self.returns = None
 
-        self.client = get_client()
+        # self.client = get_client()
+        self.client = None
         self.address = os.getenv("POLYMARKET_PROXY_ADDRESS")
 
         self.cash = config['PORTFOLIO_SIZE']
@@ -122,24 +127,24 @@ class MarketMakerBot:
 
 
     def run(self):
-        self.update_returns()
+        # self.read_returns()
 
-        if not update_allowances(self.client):
-            print("Failed to update allowances. Exiting.")
-            exit(1)
+        # if not update_allowances(self.client):
+        #    print("Failed to update allowances. Exiting.")
+        #     exit(1)
 
         # self.candle_manager.start()
-        print(self.event)
+        # print(self.event)
 
         while True:
             print("#" * 20)
 
-            secs_left = self.close_timestamp - time.time()
-            if secs_left <= 0:
-                self.switch_events()
-                continue
-            mins = secs_left // 60
-            secs = secs_left % 60
+            # secs_left = self.close_timestamp - time.time()
+            # if secs_left <= 0:
+                # self.switch_events()
+                # continue
+            # mins = secs_left // 60
+            # secs = secs_left % 60
             # print(f"{mins:.0f} Minuten und {secs:.0f} Sekunden verbleibend")
 
             # 440ms
@@ -173,7 +178,7 @@ class MarketMakerBot:
 
             order_plan = self.get_order_plan(order_book)
 
-            self.reduce_order_plan_size_based_on_pending_orders(order_plan)
+            order_plan = self.reduce_order_plan_size_based_on_pending_orders(order_plan)
 
             # self.remove_pending_orders_from_orders(my_open_orders)
 
@@ -191,12 +196,14 @@ class MarketMakerBot:
             # self.execute_orders(order_plan, yes_token_id, no_token_id)
             self.simulate_execute_orders(order_plan, order_book)
 
+            print(self.pending_orders)
+
             time.sleep(self.config['LOOP_DELAY_SECS'])
 
     def update_inventory(self, executed_order):
         o = executed_order
         value = o['size'] * o['price']
-        print(f"Limit: BUY {o['size']} NO for ${o['price']:.2} (${value:.2})")
+        print(f"Executed: BUY {o['size']} NO for ${o['price']:.2} (${value:.2})")
         if o['type'] == 'YES':
             if o['side'] == 'BUY':
                 self.yes_shares += o['size']
@@ -242,6 +249,7 @@ class MarketMakerBot:
 
         for o in self.pending_orders:
             if was_executed(order_book, o):
+                print("LIMIT")
                 self.update_inventory(o)
                 self.print_inventory()
             else:
@@ -274,7 +282,7 @@ class MarketMakerBot:
         self.no_shares = 0.
         print("event gewechselt")
 
-    def update_returns(self):
+    def read_returns(self):
         with self.file_lock:
             self.returns = pd.read_csv(FILENAME)["log_return"].dropna().tolist()
 
@@ -436,21 +444,34 @@ class MarketMakerBot:
         best_bid_size = to_size(best_bid['size'])
         best_ask_size = to_size(best_ask['size'])
 
+        print(f"Best Bid: {best_bid_price}, Best Ask: {best_ask_price}")
+
         (my_best_bid_price,
          my_best_ask_price,
          no_bid, no_ask) = self.get_my_best_bid_ask(best_bid_price, best_ask_price)
 
+        if no_bid:
+            print("No bid")
+        if no_ask:
+            print("No ask")
+        print(f"My Best Bid: {my_best_bid_price}, My Best Ask: {my_best_ask_price}")
+
         sniping_bid, sniping_ask = self.get_snipe_mode(best_bid_price, best_ask_price)
 
+        if sniping_bid:
+            print("Sniping Bid")
+        if sniping_ask:
+            print("Sniping Ask")
+
         max_inventory = self.config['MAX_INVENTORY']
-        long_inventory_left = max_inventory - self.longs - self.pending_longs
-        short_inventory_left = max_inventory - self.shorts - self.pending_shorts
+        long_inventory_left = max_inventory - self.longs
+        short_inventory_left = max_inventory - self.shorts
         order_plan = []
 
         if long_inventory_left >= 1. and not no_bid:
             if sniping_ask:
                 if self.no_shares >= self.min_order_size:
-                    price = self.to_price(1. - my_best_ask_price)
+                    price = self.to_price(1. - best_ask_price)
                     target_size = to_size(long_inventory_left / price)
                     size = min(best_ask_size, target_size)
                     size = min(to_size(self.no_shares), size)
@@ -491,11 +512,11 @@ class MarketMakerBot:
         if short_inventory_left >= 1. and not no_ask:
             if sniping_bid:
                 if self.yes_shares >= self.min_order_size:
-                    target_size = to_size(short_inventory_left / my_best_bid_price)
+                    target_size = to_size(short_inventory_left / best_bid_price)
                     size = min(target_size, best_bid_size)
                     size = min(size, to_size(self.yes_shares))
                     order_plan.append({
-                        'price': my_best_bid_price,
+                        'price': best_bid_price,
                         'size': size,
                         'side': 'SELL',
                         'type': 'YES'
@@ -515,7 +536,7 @@ class MarketMakerBot:
                     target_size = to_size(short_inventory_left / my_best_ask_price)
                     size = min(to_size(self.yes_shares), target_size)
                     order_plan.append({
-                        'price': my_best_bid_price,
+                        'price': my_best_ask_price,
                         'size': size,
                         'side': 'SELL',
                         'type': 'YES'
@@ -530,6 +551,7 @@ class MarketMakerBot:
                         'type': 'NO'
                     })
 
+        print(f"Order Plan: {order_plan}")
         return order_plan
 
     def execute_orders(self, order_plan, yes_token_id, no_token_id):
@@ -558,9 +580,12 @@ class MarketMakerBot:
     def simulate_execute_orders(self, order_plan, order_book):
         order_plan.extend(self.pending_orders)
         new_pending_orders = []
+        self.pending_longs = 0.
+        self.pending_shorts = 0.
 
         for o in order_plan:
             if order_matches_order_book(o, order_book):
+                print("Market")
                 self.update_inventory(o)
             else:
                 new_pending_orders.append(o)
@@ -581,7 +606,10 @@ class MarketMakerBot:
                     new_pending_orders.append(p)
                     self.update_pending_inventory(o)
 
+        order_plan = [o for o in order_plan if o['size'] >= self.min_order_size]
+
         self.pending_orders = new_pending_orders
+        return order_plan
 
 
     def clamp_price(self, x):
