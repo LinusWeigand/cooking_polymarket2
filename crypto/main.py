@@ -278,7 +278,8 @@ class MarketMakerBot:
 
     def update_pending_inventory(self, pending_order):
         o = pending_order
-        value = o['size'] * o['price']
+        size = o['size']
+        value = size * o['price']
         if o['type'] == 'YES':
             if o['side'] == 'BUY':
                 self.pending_longs += value
@@ -560,6 +561,7 @@ class MarketMakerBot:
             # print("Sniping Ask")
 
         max_inventory = self.config['MAX_INVENTORY']
+        max_payout = self.config['MAX_PAYOUT']
         long_inventory_left = max_inventory - self.longs
         short_inventory_left = max_inventory - self.shorts
         order_plan = []
@@ -592,18 +594,20 @@ class MarketMakerBot:
 
         # Open new positions
         if long_inventory_left >= 1. and not no_bid:
-            size = to_size(long_inventory_left / my_best_bid_price)
+            size = long_inventory_left / my_best_bid_price
             price = my_best_bid_price
             if sniping_ask:
-                size = to_size(long_inventory_left / best_ask_price)
+                size = long_inventory_left / best_ask_price
                 size = min(size, best_ask_size)
                 price = best_ask_price
-            order_plan.append({
-                'price': price,
-                'size': size,
-                'side': 'BUY',
-                'type': 'YES'
-            })
+            size = min(max_payout - self.yes_shares, size, 0)
+            if size >= self.min_order_size:
+                order_plan.append({
+                    'price': price,
+                    'size': to_size(size),
+                    'side': 'BUY',
+                    'type': 'YES'
+                })
         if short_inventory_left >= 1. and not no_ask:
             price = self.to_price(1. - my_best_ask_price)
             size = to_size(short_inventory_left / price)
@@ -611,12 +615,14 @@ class MarketMakerBot:
                 price = self.to_price(1. - best_bid_price)
                 size = to_size(short_inventory_left / price)
                 size = min(size, best_bid_size)
-            order_plan.append({
-                'price': price,
-                'size': size,
-                'side': 'BUY',
-                'type': 'NO'
-            })
+            size = min(max_payout - self.no_shares, size, 0)
+            if size >= self.min_order_size:
+                order_plan.append({
+                    'price': price,
+                    'size': size,
+                    'side': 'BUY',
+                    'type': 'NO'
+                })
 
         return order_plan
 
@@ -693,7 +699,8 @@ class MarketMakerBot:
 if __name__ == "__main__":
     BOT_CONFIG = {
         "PORTFOLIO_SIZE": 10.,
-        "MAX_POSITION_PERCENT": 0.5, # Dispute window is 1-2 hours
+        "MAX_POSITION_PERCENT": 0.5,
+        "MAX_PAYOUT_PERCENT": 2.0, # Max payout (profit) as % of portfolio
         "RISK_THRESHOLD": 0.005, # 0.5 %
         "LIMIT_ORDER_SIZE": 10,
         "LOOP_DELAY_SECS": 0,
@@ -701,6 +708,7 @@ if __name__ == "__main__":
     }
 
     BOT_CONFIG["MAX_INVENTORY"] = BOT_CONFIG["PORTFOLIO_SIZE"] * BOT_CONFIG["MAX_POSITION_PERCENT"]
+    BOT_CONFIG["MAX_PAYOUT"] = BOT_CONFIG["PORTFOLIO_SIZE"] * BOT_CONFIG["MAX_PAYOUT_PERCENT"]
 
     bot = MarketMakerBot(
         config = BOT_CONFIG,
